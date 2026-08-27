@@ -1,0 +1,53 @@
+# Dente x — Python dependencies
+#
+# Installed into the Anaconda `base` env (Python 3.13), not a venv.
+#
+# Torch must come from the CPU index, or pip pulls the CUDA build
+# (~2-3 GB of nvidia_* packages) onto a machine with no NVIDIA GPU:
+#
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+#     pip install -r requirements.txt
+#
+# The pinned torch below carries the +cpu local version identifier, so a plain
+# `pip install -r requirements.txt` will not resolve it from PyPI.
+#
+# Every pin below is the version currently installed and working on this
+# machine, not the newest on PyPI. Bump deliberately, not by default.
+
+#RAG pipeline: PDF extraction (phase 0-2)
+pymupdf==1.28.2
+
+# RAG pipeline: embeddings (phase 4)
+# PubMedBERT (NeuML/pubmedbert-base-embeddings) runs through sentence-transformers.
+torch==2.13.0+cpu
+transformers==5.15.0
+sentence-transformers==5.7.0
+
+# RAG pipeline: vector index (phase 5) 
+# Library-level FAISS, no server. IndexIDMap(IndexFlatIP) + chunk_metadata.json sidecar.
+faiss-cpu==1.15.0
+
+numpy==2.3.5
+
+# Chat agent: Claude API, official SDK only 
+# No LangChain/LangGraph: rag/retrieve.py already owns retrieval, so the extra
+# abstraction layer would wrap a function we control. Default model claude-sonnet-5.
+anthropic==0.121.0
+
+# Vision inference: ONNX Runtime, no ultralytics 
+# best.pt was exported to ONNX (opset 18) in Colab on training day; the backend
+# serves those weights directly. ultralytics is deliberately NOT a dependency  
+# it drags in the full training stack for what is a forward pass.
+onnxruntime==1.24.4
+opencv-python-headless==4.13.0.92
+pillow==12.0.0
+
+# FastAPI backend 
+# python-multipart is required for UploadFile / multipart form posts; FastAPI
+# raises at import time on a file-upload route without it.
+# pydantic-settings is a separate package since pydantic v2; app/core/config.py
+# imports BaseSettings/SettingsConfigDict from it, not from pydantic.
+pydantic-settings==2.12.0
+fastapi==0.135.3
+uvicorn==0.44.0
+python-multipart==0.0.24
