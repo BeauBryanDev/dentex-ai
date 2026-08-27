@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     fdi_class_names: list[str] = _fdi_class_names()
  
     inference_imgsz: int = 640
-    confidence_threshold: float = 0.3
+    confidence_threshold: float = 0.2
     iou_threshold: float = 0.8
     # Two different questions, so two different metrics — see fusion.py.
     # Dedup: "are these two boxes the same physical tooth?" -> symmetric IoU, high bar.
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # NOT IoU: a small caries fully inside a molar scores ~0.07 IoU purely because of the
     # size gap, so the old fusion_iou_threshold=0.1 dropped genuine findings (measured: a
     # lesion 52% contained in T37 scored 0.090 IoU and was rejected).
-    lesion_containment_threshold: float = 0.25
+    lesion_containment_threshold: float = 0.15
  
     faiss_index_path: Path = project_root / "RAG_STORE" / "dentex.faiss"
     faiss_metadata_path: Path = project_root / "RAG_STORE" / "chunk_metadata.json"
