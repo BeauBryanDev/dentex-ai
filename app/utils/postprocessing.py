@@ -11,7 +11,16 @@ from app.utils.preprocessing import Letterbox
 # Output contract (verified against both exported graphs):
 # output0 : [1, 4 + nc, 8400]
 # nc is 4 for the lesion model and 35 for the FDI model, 
-# # so one decode path serves both.
+# each box is [x, y, w, h, c, confidence] , One Decode pass serves both models.
+
+CONF_BOOST = 1.25
+
+
+def boost_scores(scores: np.ndarray) -> np.ndarray:
+    """Apply the 25% confidence boost, clamped at 1.0."""
+    return np.minimum(scores * CONF_BOOST, 1.0)
+
+
 @dataclass(frozen=True)
 class Detections:
     """Post-NMS detections in ORIGINAL image pixel coordinates."""
@@ -23,6 +32,13 @@ class Detections:
     # (N, nc) full per-class score row. The argmax alone loses the runner-up, which is the
     # only evidence available when the model calls one tooth both T34 (0.43) and T35 (0.66).
     class_scores: np.ndarray | None = None
+    # (N,) the model's own scores, before boost_scores. 
+    raw_scores: np.ndarray | None = None
+
+    @property
+    def ranking_scores(self) -> np.ndarray:
+        """Scores to compare detections by — raw when available, never the clamped ones."""
+        return self.scores if self.raw_scores is None else self.raw_scores
 
     def __len__(self) -> int:
         return len(self.scores)
@@ -33,10 +49,14 @@ class Detections:
         
         return Detections(
             boxes=self.boxes[idx],
-            scores=1.25*self.scores[idx],
+            scores=boost_scores(self.scores[idx]),
             class_ids=self.class_ids[idx],
             labels=[self.labels[i] for i in idx],
-            class_scores=None if self.class_scores is None else 1.25*self.class_scores[idx],
+            class_scores=(
+                None if self.class_scores is None else boost_scores(self.class_scores[idx])
+            ),
+            # Subset, never re-boosted: this is the model's own number by definition.
+            raw_scores=None if self.raw_scores is None else self.raw_scores[idx],
         )
 
 
@@ -212,12 +232,16 @@ def decode(
     scores, class_ids = scores[keep], class_ids[keep]
 
     kept = class_aware_nms(boxes, scores, class_ids, iou_threshold)
-    boxes, scores, class_ids = boxes[kept], 1.25*scores[kept], class_ids[kept].astype(np.int32)
+    boxes = boxes[kept]
+    raw_scores = scores[kept]
+    scores = boost_scores(raw_scores)
+    class_ids = class_ids[kept].astype(np.int32)
 
     return Detections(
         boxes=scale_boxes(boxes, meta).astype(np.float32),
         scores=scores.astype(np.float32),
         class_ids=class_ids,
         labels=[class_names[i] for i in class_ids],
-        class_scores=cls_scores[keep][kept].astype(np.float32),
+        class_scores=boost_scores(cls_scores[keep][kept]).astype(np.float32),
+        raw_scores=raw_scores.astype(np.float32),
     )

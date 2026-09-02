@@ -135,11 +135,14 @@ def run_turn(
             )
             
         except Exception as exc:  
+            
+            raise translate_anthropic_error(exc) from exc
 
-            log_agent_usage(logger, 
-                            response,
-                            model=settings.anthropic_model
-                            )
+
+        log_agent_usage(logger, 
+                        response,
+                        model=settings.anthropic_model
+                        )
             
         request_id = getattr(response, "_request_id", None)
         in_tokens += response.usage.input_tokens

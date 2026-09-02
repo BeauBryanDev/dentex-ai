@@ -10,7 +10,7 @@ from app.utils.postprocessing import Detections, containment_matrix, iou_matrix
 
 # class_id -> FDI number, for tooth classes only. 
 # Restorations (Bridge/Crown/Implant) map
-# to None and are deliberately absent here.
+# to None and are intended to be absent here.
 _FDI_BY_CLASS_ID: dict[int, int] = {
     r["id"]: r["fdi"] for r in CLASS_MAP if r["type"] == "tooth"
 }  # first three classes as 0,1,2 from FDI dataset were restorations
@@ -34,7 +34,7 @@ class Finding:
     lesion_score: float
     box: tuple[float, float, float, float]
     tooth_fdi: int | None   # None when no tooth sufficiently contains the lesion
-    tooth_anatomy: str | None  # e.g. "upper_left_first_molar"
+    tooth_anatomy: str | None  # EG. "upper_left_first_molar"
     containment: float    # fraction of the lesion inside the assigned tooth
 
     def describe(self) -> str:
@@ -74,7 +74,9 @@ def dedup_teeth(teeth: Detections, iou_threshold: float) -> Detections:
 
     if len(tooth_idx) > 1:
         #  Classless greedy suppression over tooth boxes only, highest score first.
-        order = tooth_idx[teeth.scores[tooth_idx].argsort()[::-1]]
+        # Ranked by ranking_scores, i.e. the model's raw scores — not scores.
+        rank = teeth.ranking_scores
+        order = tooth_idx[rank[tooth_idx].argsort()[::-1]]
         boxes = teeth.boxes
         keep: list[int] = []
         
@@ -147,7 +149,7 @@ def assign_lesions(
             )
         )
 
-    # Most confident findings first — this ordering is what the agent and UI present.
+    # Most confident findings first — this ordering is what My Agent and UI shows up..
     findings.sort(key=lambda f: f.lesion_score, reverse=True)
     
     return findings
@@ -164,6 +166,13 @@ def fuse(
     Order matters: dedup must precede assignment, or a finding gets attributed to an FDI
     number that is about to be discarded.
     """
-    teeth = dedup_teeth(teeth, dedup_iou_threshold)
+    teeth = dedup_teeth(teeth, 
+                        dedup_iou_threshold
+                        )
     
-    return assign_lesions(lesions, teeth, containment_threshold), teeth
+    findings = assign_lesions(lesions, 
+                              teeth, 
+                              containment_threshold
+                              )
+
+    return findings, teeth

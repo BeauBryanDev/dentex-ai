@@ -19,7 +19,7 @@ SEARCH_DENTAL_REFERENCE: dict[str, Any] = {
         "Search the dental reference corpus and return verbatim passages with their "
         "source, section and page. The corpus is four documents: the Garg *Operative "
         "Dentistry* textbook (clinical practice), a peer-reviewed reference on dental "
-        "caries from King's College", 
+        "caries from King's College, "
         "FDI policy statements, and ISO 3950 only. .\n\n"
         "Call it before stating a diagnosis or a management plan for the patient — a "
         "recommendation the dentist can trace to the literature is worth more than the "
