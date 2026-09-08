@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 
 from app.agent.orchestrator import prune_tool_results, run_turn
-from app.agent.tool_schema import SEARCH_TOOL_NAME
+from app.agent.tool_schema import DENTAL_OFFICE_TOOL_NAME, SEARCH_TOOL_NAME
+from app.tools.get_dental_offices import DentalOffice, DentalOfficeSearchResult
 from app.core.budget import BudgetGuard, Spend
 from app.core.exception import AgentBudgetError, AgentRefusalError
 from app.core.session_store import SessionStore
@@ -117,6 +118,57 @@ def test_the_budget_is_checked_before_any_request_is_sent(test_settings, fake_re
             budget=guard,
         )
     assert client.messages.calls == []
+
+
+def test_a_dental_office_turn_searches_near_the_users_city(test_settings, fake_retriever, monkeypatch):
+    offices = (
+        DentalOffice(
+            name="Smile Clinic",
+            address="12 Rue Example",
+            rating=4.5,
+            user_ratings_total=12,
+            open_now=True,
+            maps_url="https://maps.example/dentist-1",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agent.orchestrator.search_dental_offices_near_city",
+        lambda city, **kwargs: DentalOfficeSearchResult(
+            text=f"offices near {city}",
+            office_count=len(offices),
+            resolved_location=city,
+            offices=offices,
+        ),
+    )
+    client = FakeAnthropicClient(
+        [
+            fake_response(
+                [
+                    tool_use_block(
+                        "tu_1",
+                        DENTAL_OFFICE_TOOL_NAME,
+                        {"city": "Lyon", "region_hint": "France"},
+                    )
+                ],
+                stop_reason="tool_use",
+            ),
+            fake_response([text_block("Here are two clinics in Lyon.")]),
+        ]
+    )
+    settings = test_settings.model_copy(update={"google_maps_api_key": "test-key"})
+    reply = run_turn(
+        new_session(),
+        "find me a dentist",
+        client=client,
+        retriever=fake_retriever,
+        settings=settings,
+    )
+    assert [t.name for t in reply.tool_calls] == [DENTAL_OFFICE_TOOL_NAME]
+    assert reply.tool_calls[0].query == "Lyon, France"
+    assert reply.tool_calls[0].result_count == 1
+    assert reply.tool_calls[0].resolved_location == "Lyon"
+    assert len(reply.tool_calls[0].dental_offices) == 1
+    assert reply.tool_calls[0].dental_offices[0].maps_url == "https://maps.example/dentist-1"
 
 
 def test_prune_stubs_older_retrievals_but_keeps_their_blocks():

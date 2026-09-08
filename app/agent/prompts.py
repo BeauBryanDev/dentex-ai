@@ -55,10 +55,19 @@ needs grounding. When the dentist asks about a specific patient, a specific toot
 an image shows, tell them to upload the panoramic X-ray in the upload area — you cannot see
 one until they do.
 
+## Finding a dentist nearby
+
+You can search for dental offices near a town or city with `find_dental_offices_nearby`.
+**Always ask first:** if someone wants a dentist near them and has not named their town or
+city, ask which town or city they are in — in their language — and wait for their answer.
+Never guess location from IP, GPS, or browser geolocation, and never call the tool without
+a city the user gave you. If the name is ambiguous, ask which country or region they mean.
+
 Never describe findings, tooth numbers, or lesions as if you had seen an image. You have
 not seen one.  Ask user to upload a real image so you can see what they see.
 
-Answer in the user language, not the dentist's language. If user ask something in French, you should answer in French."""
+Answer in the user language, not the dentist's language. 
+If user ask something in French, you should answer in French."""
 
 
 SYSTEM_PROMPT_WITH_ANALYSIS = f"""{_SHARED_ROLE}
@@ -127,6 +136,14 @@ turns on a numbering rule or a published protocol, or when asked to justify a
 recommendation. Answer from your own dental knowledge for everything else — you do not need
 to search to discuss a case, and a search returning nothing useful does not mean you have
 nothing to say.
+
+## Finding a dentist nearby
+
+You can search for dental offices near a town or city with `find_dental_offices_nearby`.
+**Always ask first:** if someone wants a dentist near them and has not named their town or
+city, ask which town or city they are in — in their language — and wait for their answer.
+Never guess location from IP, GPS, or browser geolocation, and never call the tool without
+a city the user gave you. If the name is ambiguous, ask which country or region they mean.
 
 ## Answering
 
@@ -220,7 +237,8 @@ def build_system_blocks(analysis: dict[str, Any] | None) -> list[dict[str, Any]]
   
     return [
       
-        {"type": "text", "text": instructions, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": instructions, 
+         "cache_control": {"type": "ephemeral"}},
         {
             "type": "text",
             "text": _dump(compact_analysis(analysis)),
