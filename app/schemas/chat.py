@@ -9,6 +9,7 @@ from app.agent.orchestrator import AgentReply
 # # to validate the wire format, not to generate it.
 
 class ChatRequest(BaseModel):
+    
     message: str = Field(
         min_length=1,
         max_length=8000,
@@ -24,12 +25,36 @@ class ChatRequest(BaseModel):
     )
 
 
+class DentalOfficeOut(BaseModel):
+    """One dental practice from a nearby search."""
+
+    name: str
+    address: str
+    rating: float | None = None
+    user_ratings_total: int | None = None
+    open_now: bool | None = None
+    maps_url: str | None = Field(
+        default=None,
+        description="Google Maps link for this practice.",
+    )
+
+
 class ToolCallOut(BaseModel):
-    """A retrieval the agent chose to make while answering."""
+    """A tool the agent invoked while answering."""
 
     name: str
     query: str = Field(description="The query Claude wrote, not the dentist's wording.")
-    result_count: int = Field(description="Passages returned. 0 means the corpus had nothing.")
+    result_count: int = Field(
+        description="Passages or offices returned. 0 means nothing matched."
+    )
+    resolved_location: str | None = Field(
+        default=None,
+        description="Geocoded town or city for a dental office search.",
+    )
+    dental_offices: list[DentalOfficeOut] = Field(
+        default_factory=list,
+        description="Structured office listings when name is find_dental_offices_nearby.",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -56,12 +81,27 @@ class ChatResponse(BaseModel):
             reply=reply.text,
             grounded_in_analysis=reply.grounded_in_analysis,
             tool_calls=[
-                ToolCallOut(name=t.name, 
-                            query=t.query, 
-                            result_count=t.result_count
-                            )
+                
+                ToolCallOut(
+                    name=t.name,
+                    query=t.query,
+                    result_count=t.result_count,
+                    resolved_location=t.resolved_location,
+                    dental_offices=[
+                        DentalOfficeOut(
+                            name=o.name,
+                            address=o.address,
+                            rating=o.rating,
+                            user_ratings_total=o.user_ratings_total,
+                            open_now=o.open_now,
+                            maps_url=o.maps_url,
+                        )
+                        for o in t.dental_offices
+                    ],
+                ) # dental_offices is a list of DentalOfficeOut
                 for t in reply.tool_calls
             ],
+            
             input_tokens=reply.input_tokens,
             output_tokens=reply.output_tokens,
             

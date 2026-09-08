@@ -4,13 +4,14 @@ from __future__ import annotations
 from typing import Any
 
 SEARCH_TOOL_NAME = "search_dental_reference"
-# The tool surface exposed to Claude — exactly one tool.
+DENTAL_OFFICE_TOOL_NAME = "find_dental_offices_nearby"
+# The tool surface exposed to Claude.
 
 # There is no [analyze_xray] tool and there must not be one. 
-# The vision analysis happens in POST /analyze 
+# The vision analysis happens in POST /analyze | vision is not a tool Claude can call. 
+# The only tool Claude can call is search_dental_reference,
+# which is a retrieval over the reference corpus.
 # and the tool call happens in POST /chat.
-
-#Hence the only tool claude has is search_dental_reference
 
 SEARCH_DENTAL_REFERENCE: dict[str, Any] = {
     
@@ -67,4 +68,49 @@ SEARCH_DENTAL_REFERENCE: dict[str, Any] = {
     },
 }
 
-TOOLS: list[dict[str, Any]] = [SEARCH_DENTAL_REFERENCE]
+FIND_DENTAL_OFFICES_NEARBY: dict[str, Any] = {
+    
+    "name": DENTAL_OFFICE_TOOL_NAME,
+    "description": (
+        "Search Google Maps for dental offices and clinics near a town or city the "
+        "user has told you.\n\n"
+        "**Ask first — never guess location.** Before calling this tool you must have "
+        "the user's town or city from their own message. If they have not said where "
+        "they are, ask plainly: 'Which town or city are you in?' Do not call this tool "
+        "until they answer. Never infer location from IP address, browser geolocation, "
+        "GPS, or assumptions.\n\n"
+        "Use it when someone wants to find a dentist, dental clinic, or dental office "
+        "near them, or asks where they can book an appointment locally. If the city "
+        "name is ambiguous (for example 'Springfield'), ask which country or region they "
+        "mean and pass that as region_hint.\n\n"
+        "Summarise the results in the user's language. These are third-party listings — "
+        "tell them to confirm hours, insurance, and availability before booking.\n\n"
+        "When you mention an office in your reply, include its Google Maps link as a "
+        "markdown link using the map URL from the tool output."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": (
+                    "The town or city the user gave you, exactly as they stated it "
+                    "(for example 'Lyon', 'Austin', 'Mexico City'). Required — do not "
+                    "invent or infer this value."
+                ),
+            },
+            "region_hint": {
+                "type": "string",
+                "description": (
+                    "Optional country, state, or province to disambiguate the city "
+                    "(for example 'France', 'Texas', 'Ontario'). Omit when the city "
+                    "is already unambiguous."
+                ),
+            },
+        },
+        "required": ["city"],
+        "additionalProperties": False,
+    },
+}
+
+TOOLS: list[dict[str, Any]] = [SEARCH_DENTAL_REFERENCE, FIND_DENTAL_OFFICES_NEARBY]

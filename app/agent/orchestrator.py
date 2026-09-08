@@ -8,7 +8,11 @@ from typing import Any
 import anthropic
 
 from app.agent.prompts import build_system_blocks
-from app.agent.tool_schema import SEARCH_TOOL_NAME, TOOLS
+from app.agent.tool_schema import (
+    DENTAL_OFFICE_TOOL_NAME,
+    SEARCH_TOOL_NAME,
+    TOOLS,
+)
 from app.core.budget import BudgetExceeded, BudgetGuard
 from app.core.exception import (
     AgentBudgetError,
@@ -18,6 +22,7 @@ from app.core.exception import (
 )
 from app.core.logging import log_agent_usage
 from app.core.session_store import ChatSession
+from app.tools.get_dental_offices import DentalOffice, search_dental_offices_near_city
 from app.tools.rag_tool import run_search
 
 logger = logging.getLogger(__name__)
@@ -29,11 +34,13 @@ MAX_TOOL_ROUNDS = 4
 
 @dataclass(frozen=True)
 class ToolCallRecord:
-    """One retrieval round-trip, kept so the UI can show what was consulted."""
+    """One tool round-trip, kept so the UI can show what was consulted."""
 
     name: str
     query: str
     result_count: int
+    resolved_location: str | None = None
+    dental_offices: tuple[DentalOffice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,6 +63,80 @@ def _text_of(response: Any) -> str:
 _STUB = "[earlier retrieval — passages omitted from history to save context]"
 
 
+def _run_tool(
+    block: Any,
+    *,
+    retriever: Any,
+    settings: Any,
+) -> tuple[str, bool, ToolCallRecord | None]:
+    """
+    Execute one tool_use block.
+
+    Returns:
+        (content, is_error, record) where record is None for unknown tools.
+    """
+    if block.name == SEARCH_TOOL_NAME:
+        
+        query = (block.input or {}).get("query", "")
+        
+        try:
+            found = run_search(retriever, query)
+            record = ToolCallRecord(SEARCH_TOOL_NAME, query, found.hit_count)
+            return found.text, False, record
+        
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("retrieval failed for %r", query)
+            return f"retrieval failed: {exc}", True, None
+
+    if block.name == DENTAL_OFFICE_TOOL_NAME:
+        
+        payload = block.input or {}
+        city = str(payload.get("city") or "").strip()
+        region_hint = payload.get("region_hint")
+        region = str(region_hint).strip() if region_hint else None
+        label = f"{city}, {region}" if region else city
+        
+        if not city:
+            return (
+                "city is required — ask the user which town or city they are in before "
+                "searching.",
+                True,
+                None,
+            )
+        if not settings.google_maps_api_key:
+            
+            return (
+                "dental office search is unavailable — Google Maps API key is not configured.",
+                True,
+                None,
+            )
+            
+        try:
+            found = search_dental_offices_near_city(
+                city,
+                api_key=settings.google_maps_api_key,
+                region_hint=region,
+                radius_m=settings.dental_office_search_radius_m,
+                max_results=settings.dental_office_max_results,
+            )
+            
+            record = ToolCallRecord(
+                DENTAL_OFFICE_TOOL_NAME,
+                label,
+                found.office_count,
+                resolved_location=found.resolved_location,
+                dental_offices=found.offices,
+            )
+            return found.text, False, record
+        
+        except Exception as exc:  # noqa: BLE001
+            
+            logger.exception("dental office search failed for %r", label)
+            return f"dental office search failed: {exc}", True, None
+
+    return f"unknown tool {block.name!r}", True, None
+
+
 def prune_tool_results(messages: list[dict[str, Any]], 
                        keep_full: int
                        ) -> None:
@@ -73,7 +154,7 @@ def prune_tool_results(messages: list[dict[str, Any]],
         if  m.get("role") == "user" and isinstance(m.get("content"), list) 
         # The tool_result is a block in the content list, not the whole content.
         and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in m["content"])
-    ]
+    ] 
     for msg in tool_result_msgs[:-keep_full] if keep_full else tool_result_msgs:
         
         for block in msg["content"]:
@@ -202,37 +283,14 @@ def run_turn(
             
             if block.type != "tool_use":
                 continue
-            
-            if block.name != SEARCH_TOOL_NAME:
-                
-                results.append({
-                    
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": f"unknown tool {block.name!r}",
-                    "is_error": True,
-                })
-                continue
 
-            query = (block.input or {}).get("query", "")
-            
-            try:
-                
-                found = run_search(retriever, query)
-                content, is_error = found.text, False
-                
-                tool_calls.append(
-                    ToolCallRecord(SEARCH_TOOL_NAME, 
-                                   query, 
-                                   found.hit_count
-                                   )
-                )
-                
-            except Exception as exc:  # noqa: BLE001
-                # A retrieval failure is reported to the model as a failed tool, not raised:
-                # it can still answer while saying the corpus was unavailable.
-                logger.exception("retrieval failed for %r", query)
-                content, is_error = f"retrieval failed: {exc}", True
+            content, is_error, record = _run_tool(
+                block,
+                retriever=retriever,
+                settings=settings,
+            )
+            if record is not None:
+                tool_calls.append(record)
 
             results.append({
                 "type": "tool_result",

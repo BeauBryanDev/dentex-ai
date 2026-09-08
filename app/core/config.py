@@ -29,7 +29,8 @@ def _fdi_class_names() -> list[str]:
 
 class Settings(BaseSettings):
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", 
+                                      env_file_encoding="utf-8")
 
     project_root: Path = PROJECT_ROOT
     lesion_model_path: Path = project_root / "models" / "lesion_yolov8small.onnx"
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
     session_token_budget: int = 120_000     # ~one long consultation
     process_token_budget: int = 1_500_000   # backstop; resets only on restart
     max_turns_per_session: int = 25
-    # Thinking depth. claude-sonnet-5 defaults to "high"; "medium" is ample for reading a
+    # Thinking depth. claude-sonnet-5 defaults to "high"; "medium" is enough for
     # findings JSON and citing a corpus, and cuts thinking tokens — which are billed as
     # output at 5x the input rate.
     agent_effort: str = "medium"
@@ -82,8 +83,14 @@ class Settings(BaseSettings):
     # Panoramic X-rays are large (the test set runs to ~2870px wide); 20 MB covers a 16-bit
     # PNG panoramic with room to spare while bounding what a single request can buffer.
     max_upload_bytes: int = 20 * 1024 * 1024
- 
- 
+
+    # Google Maps Platform — Geocoding + Places (optional; dental-office finder).
+    google_maps_api_key: str = ""
+
+    dental_office_search_radius_m: int = 10_000
+    dental_office_max_results: int = 5
+
+
 settings = Settings()
  
  
