@@ -67,7 +67,7 @@ def configure_logging(level: int | str = logging.INFO) -> None:
         from app.core.config import settings
 
         secrets = (settings.anthropic_api_key,)
-    except Exception:  # noqa: BLE001 - logging must survive a broken/missing config
+    except Exception: # logging must survive a broken/missing config
         secrets = ()
 
     handler = logging.StreamHandler(sys.stdout)
@@ -92,9 +92,10 @@ def configure_logging(level: int | str = logging.INFO) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-def log_agent_usage(logger: logging.Logger, 
-                    response: Any, *, 
-                    model: str | None = None
+def log_agent_usage(logger: logging.Logger,
+                    response: Any, *,
+                    model: str | None = None,
+                    elapsed_s: float | None = None,
                     ) -> None:
     """
     Log token usage and the provider request id for one Claude response.
@@ -109,7 +110,8 @@ def log_agent_usage(logger: logging.Logger,
         return
 
     logger.info(
-        "claude model=%s request_id=%s in=%s out=%s cache_read=%s cache_write=%s stop=%s",
+        "claude model=%s request_id=%s in=%s out=%s cache_read=%s cache_write=%s stop=%s"
+        " took=%s",
         model or getattr(response, "model", "?"),
         getattr(response, "_request_id", None),
         getattr(usage, "input_tokens", 0),
@@ -117,4 +119,5 @@ def log_agent_usage(logger: logging.Logger,
         getattr(usage, "cache_read_input_tokens", 0),
         getattr(usage, "cache_creation_input_tokens", 0),
         getattr(response, "stop_reason", None),
+        f"{elapsed_s:.2f}s" if elapsed_s is not None else "?",
     )

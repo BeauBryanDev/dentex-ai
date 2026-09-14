@@ -7,10 +7,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agent.prompts import NEW_XRAY_NOTICE
 from app.core.budget import Spend
 """In-process session state, bridging the two HTTP requests that make up one consultation."""
-DEFAULT_TTL_SECONDS = 60 * 60          # an hour of inactivity ends a consultation
-DEFAULT_MAX_SESSIONS = 200             # hard ceiling so a loop of new IDs cannot exhaust RAM
+DEFAULT_TTL_SECONDS = 60 * 60  # an hour of inactivity ends a consultation
+DEFAULT_MAX_SESSIONS = 200    # hard ceiling so a loop of new IDs cannot exhaust RAM
+# X-rays one consultation may cover. Two is the demo case ...
+MAX_ANALYSES_PER_SESSION = 2
 
 
 @dataclass
@@ -28,13 +31,13 @@ class ChatSession:
     messages: list[dict[str, Any]] = field(default_factory=list)
     # Held for the whole of one agent turn. The store's own lock protects the *map*; this
     # protects one conversation's history, which the orchestrator appends to across several
-    # round-trips (user turn, assistant turn, tool results, assistant turn). Two /chat
-    # requests racing on one session would otherwise interleave those appends and produce a
-    # history the API rejects — tool_result blocks separated from their tool_use.
+    # round-trips (user turn, assistant turn, tool results, assistant turn). 
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
     # Tokens and turns spent by this conversation, enforced against the per-session
     # ceilings in core/budget.py.
     spend: Spend = field(default_factory=Spend)
+    # How many X-rays this consultation has covered, capped at MAX_ANALYSES_PER_SESSION.
+    analysis_count: int = 0
 
     @property
     def has_analysis(self) -> bool:
@@ -81,7 +84,9 @@ class SessionStore:
     def create(self) -> ChatSession:
         """Create a new session, and return it."""
         now = time.time()
-        session = ChatSession(session_id=str(uuid.uuid4()), created_at=now, last_seen=now)
+        session = ChatSession(session_id=str(uuid.uuid4()), 
+                              created_at=now, 
+                              last_seen=now)
         
         with self._lock:
             self._purge_expired(now)
@@ -108,23 +113,18 @@ class SessionStore:
                 
             return session
 
-    def get_or_create(self, session_id: str | None = None) -> ChatSession:
+    def get_or_create(self, 
+                      session_id: str | None = None
+                      ) -> ChatSession:
         """Resolve a session id, minting a new one if it is missing or has expired.
-
-        An expired id quietly becomes a *new* session rather than an error: the frontend
-        holds the id in memory and a dentist returning after lunch should get a working
-        chat, not a failure. The cost is that the old analysis is gone — which is correct,
-        since the whole point of the TTL is that it no longer exists.
         """
         return self.get(session_id) or self.create()
 
-    def set_analysis(self, session_id: str, analysis: dict[str, Any]) -> None:
-        """Attach (or replace) the analysis for a session.
-
-        Replacement is intentional: uploading a second X-ray re-points the conversation at
-        the new one. The message history is kept, so the dentist can say "and this one?"
-        and Claude still has the thread — but every later turn is grounded in the new
-        findings, never a mix of both.
+    def set_analysis(self, 
+                     session_id: str, 
+                     analysis: dict[str, Any]
+                     ) -> None:
+        """Attach (or replace) the analysis for a session, and nothing else.
         """
         with self._lock:
             
@@ -134,7 +134,46 @@ class SessionStore:
                 session.analysis = analysis
                 session.last_seen = time.time()
 
-    def append_message(self, session_id: str, message: dict[str, Any]) -> None:
+
+    def attach_analysis(
+        self,
+        session_id: str | None,
+        analysis: dict[str, Any],
+    ) -> tuple[ChatSession, bool]:
+        """
+        Point a consultation at a freshly analysed X-ray. Returns (session, started_new).
+
+        This is the whole of the multi-image policy, in one place + two halves
+        only make sense together.
+        """
+        session = self.get(session_id)
+
+        started_new = session is None or session.analysis_count >= MAX_ANALYSES_PER_SESSION
+
+        if started_new:
+            session = self.create()
+
+        with self._lock:
+            # Re-read under the lock: get()/create() released it, and a concurrent upload
+            # on the same id could have moved the count in between.
+            live = self._sessions.get(session.session_id)
+
+            if live is None:  # evicted between create() and here; vanishingly rare
+                return session, started_new
+
+            if live.analysis is not None:
+                live.messages.append({"role": "user", "content": NEW_XRAY_NOTICE})
+
+            live.analysis = analysis
+            live.analysis_count += 1
+            live.last_seen = time.time()
+
+            return live, started_new
+
+    def append_message(self, 
+                       session_id: str, 
+                       message: dict[str, Any]
+                       ) -> None:
         
         with self._lock:
             
@@ -145,7 +184,10 @@ class SessionStore:
                 session.messages.append(message)
                 session.last_seen = time.time()
 
-    def reset_messages(self, session_id: str) -> None:
+
+    def reset_messages(self, 
+                       session_id: str
+                       ) -> None:
         """Clear the conversation but keep the analysis — 'start over on this X-ray'."""
         with self._lock:
             
@@ -156,11 +198,14 @@ class SessionStore:
                 session.messages.clear()
                 session.last_seen = time.time()
 
-    def delete(self, session_id: str) -> None:
+    def delete(self, 
+               session_id: str
+               ) -> None:
         
         with self._lock:
             
             self._sessions.pop(session_id, None)
+
 
     def __len__(self) -> int:
         

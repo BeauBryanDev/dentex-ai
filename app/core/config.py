@@ -1,3 +1,7 @@
+
+from __future__ import annotations
+
+
 import json
 from pathlib import Path
 
@@ -5,8 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Single source of truth for the FDI model's class list: id :: anatomy. Derive the raw
-# class-name list from it rather than restating it, so the two cannot drift after a retrain.
+# Single source of truth for the FDI model's class list: id :: anatomy. 
 CLASS_MAP_PATH = PROJECT_ROOT / "app" / "utils" / "CLASS_MAP.json"
 CLASS_MAP: list[dict] = json.loads(CLASS_MAP_PATH.read_text())
 
@@ -29,8 +32,11 @@ def _fdi_class_names() -> list[str]:
 
 class Settings(BaseSettings):
 
-    model_config = SettingsConfigDict(env_file=".env", 
-                                      env_file_encoding="utf-8")
+    # extra="ignore": .env carries keys that are not settings fields (the LLM_* trio), and
+    # the default "forbid" turns any such key into a startup crash for the whole backend.
+    model_config = SettingsConfigDict(env_file=".env",
+                                      env_file_encoding="utf-8",
+                                      extra="ignore")
 
     project_root: Path = PROJECT_ROOT
     lesion_model_path: Path = project_root / "models" / "lesion_yolov8small.onnx"
@@ -49,8 +55,7 @@ class Settings(BaseSettings):
     # Dedup: "are these two boxes the same physical tooth?" -> symmetric IoU, high bar.
     tooth_dedup_iou_threshold: float = 0.7
     # NOT IoU: a small caries fully inside a molar scores ~0.07 IoU purely because of the
-    # size gap, so the old fusion_iou_threshold=0.1 dropped genuine findings (measured: a
-    # lesion 52% contained in T37 scored 0.090 IoU and was rejected).
+    # size gap, so the old fusion_iou_threshold=0.1 dropped genuine findings ...
     lesion_containment_threshold: float = 0.15
  
     faiss_index_path: Path = project_root / "RAG_STORE" / "dentex.faiss"
@@ -64,19 +69,21 @@ class Settings(BaseSettings):
     session_token_budget: int = 120_000     # ~one long consultation
     process_token_budget: int = 1_500_000   # backstop; resets only on restart
     max_turns_per_session: int = 25
-    # Thinking depth. claude-sonnet-5 defaults to "high"; "medium" is enough for
-    # findings JSON and citing a corpus, and cuts thinking tokens — which are billed as
-    # output at 5x the input rate.
-    agent_effort: str = "medium"
+    # Thinking depth — low | medium | high | xhigh | max, default "high" when omitted.
+    # Thinking tokens are billed as output at 5x the input rate AND generated serially
+    # before the first visible word, so this is the single largest latency term in a turn.
+    # "low" is enough to read a findings payload and cite a corpus.
+    llm_effort: str = "low"
     # Retrieval history: how many past tool_results keep their full text. Older ones are
     # stubbed, because a retrieval already consumed is resent verbatim on every later turn.
     keep_full_tool_results: int = 1
+    
+    llm_thinking_enabled: bool = True
 
-    # max_tokens caps thinking AND response text together, and claude-sonnet-5 runs
-    # adaptive thinking by default (omitting the `thinking` param does not disable it).
-    # At 1024 a grounded answer that reasons over the findings can spend the budget
-    # thinking and get truncated mid-sentence with stop_reason="max_tokens".
-    agent_max_tokens: int = 2048
+    # max_tokens caps thinking AND response text together. At 1024 a grounded answer that
+    # reasons over the findings can spend the budget thinking and get truncated mid-sentence
+    # with stop_reason="max_tokens".
+    llm_max_tokens: int = 1500
  
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
@@ -89,6 +96,19 @@ class Settings(BaseSettings):
 
     dental_office_search_radius_m: int = 10_000
     dental_office_max_results: int = 5
+    
+    # TODO:  set claude-sonnet-5 to thinking=False, it is costing money and time on every turn.
+    
+    ## YouTube Data API — trusted-channel advice videos (optional; dentist_advisor). 
+    # Plain fields, like every other setting here: pydantic-settings reads them from .env
+    # itself and env lookup is case-insensitive, so YOUTUBE_DATA_API_KEY in .env lands
+    # here. os.getenv() would NOT have worked unsecurely  .env is parsed by pydantic.
+    youtube_data_api_key: str = ""
+    # The pool is what the API returns; max_results is what survives the trusted-channel
+    # filter, so the pool must stay the larger of the two.
+    youtube_search_pool: int = 10
+    youtube_max_results: int = 3
+
 
 
 settings = Settings()
