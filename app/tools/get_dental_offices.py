@@ -7,7 +7,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.utils.geolocation_utils import GeocodedLocation, GeocodingError, geocode_city
+from app.utils.geolocation_utils import ( GeocodedLocation, 
+                                         GeocodingError, 
+                                         geocode_city ) 
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,7 @@ def _parse_office(raw: dict[str, Any]) -> DentalOffice:
 def _format_office(rank: int, office: DentalOffice) -> str:
     
     rating_bits: list[str] = []
+    
     if office.rating is not None: # star rating
         rating_bits.append(f"rating {office.rating:.1f}/5")
         
@@ -181,7 +184,8 @@ def search_dental_offices_near_city(
         offices=tuple(offices),
     )
 
-
+# Helper for the UI — the search result is a list of offices, but the UI wants a single
+# string with a header and a list of lines.
 def _nearby_dental_offices(
     location: GeocodedLocation,
     *,
@@ -190,6 +194,7 @@ def _nearby_dental_offices(
     max_results: int,
     timeout: float,
 ) -> list[DentalOffice]:
+    
     params = urlencode(
         {
             "location": f"{location.latitude},{location.longitude}",
@@ -198,7 +203,8 @@ def _nearby_dental_offices(
             "key": api_key,
         }
     )
-    data = _fetch_json(f"{PLACES_NEARBY_URL}?{params}", timeout=timeout)
+    data = _fetch_json(f"{PLACES_NEARBY_URL}?{params}", 
+                       timeout=timeout)
 
     status = data.get("status")
     
