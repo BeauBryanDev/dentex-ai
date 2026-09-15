@@ -8,10 +8,7 @@
 #     pip install torch --index-url https://download.pytorch.org/whl/cpu
 #     pip install -r requirements.txt
 #
-# The pinned torch below carries the +cpu local version identifier, so a plain
-# `pip install -r requirements.txt` will not resolve it from PyPI.
-#
-# Every pin below is the version currently installed and working on this
+# Everything below is the version currently installed and working on this
 # machine, not the newest on PyPI. Bump deliberately, not by default.
 
 #RAG pipeline: PDF extraction (phase 0-2)
@@ -45,12 +42,18 @@ pillow==12.0.0
 # FastAPI backend 
 # python-multipart is required for UploadFile / multipart form posts; FastAPI
 # raises at import time on a file-upload route without it.
-# pydantic-settings is a separate package since pydantic v2; app/core/config.py
-# imports BaseSettings/SettingsConfigDict from it, not from pydantic.
 pydantic-settings==2.12.0
 fastapi==0.135.3
 uvicorn==0.44.0
 python-multipart==0.0.24
+
+# WHO GHO oral-health-access tool (app/tools/oral_health_stats.py). Imported at startup
+# via agent/orchestrator.py, so the unit suite needs both even though it never calls out.
+pycountry==26.2.16
+requests==2.34.2
+
+# Trusted-channel advice videos (app/tools/dentist_advisor.py), imported at startup too.
+google-api-python-client==2.200.0
 
 # tests. httpx is what starlette's TestClient runs on and what the SDK raises through.
 pytest==9.0.2

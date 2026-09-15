@@ -5,6 +5,7 @@ import anthropic
 import httpx
 import numpy as np
 
+from app.agent.prompts import NEW_XRAY_NOTICE
 from app.core.session_store import SessionStore
 from tests.unit.conftest import (
     TOOTH_ID_BY_FDI,
@@ -80,3 +81,63 @@ def test_chat_passes_upstream_backoff_through_as_retry_after(app_client):
     assert response.json()["retryable"] is True
 
 
+
+
+def test_a_second_x_ray_re_grounds_the_same_consultation(app_client):
+    """Upload, chat, upload again: the second analysis must reach the agent.
+
+    This is the whole two-image demo path — a healthy mouth beside a diseased one — and it
+    exercises the part that used to fail silently: the findings were replaced on the
+    session, but nothing in the conversation said so.
+    """
+    store = SessionStore()
+    first_fdi = yolo_output([(300, 300, 100, 200, TOOTH_ID_BY_FDI[26], 0.9)], 35)
+    first_lesion = yolo_output([(300, 300, 20, 20, 0, 0.6)], 4)
+
+    with app_client(
+        lesion_session=FakeOnnxSession(first_lesion),
+        fdi_session=FakeOnnxSession(first_fdi),
+        sessions=store,
+    ) as client:
+        first = client.post("/analyze", files=xray_upload()).json()
+        session_id = first["session_id"]
+        assert first["findings"][0]["tooth_fdi"] == 26
+
+        # A second X-ray, on a different tooth, into the running consultation.
+        client.app.state.fdi_session = FakeOnnxSession(
+            yolo_output([(300, 300, 100, 200, TOOTH_ID_BY_FDI[37], 0.9)], 35)
+        )
+        client.app.state.lesion_session = FakeOnnxSession(
+            yolo_output([(300, 300, 20, 20, 2, 0.6)], 4)
+        )
+        second = client.post(
+            "/analyze", files=xray_upload(), data={"session_id": session_id}
+        ).json()
+
+    assert second["session_id"] == session_id        # same consultation
+    assert second["findings"][0]["tooth_fdi"] == 37   # new findings, not the old ones
+
+    session = store.get(session_id)
+    assert session.analysis["findings"][0]["tooth_fdi"] == 37
+    # The agent is told the image changed; without this the system block swaps silently.
+    assert session.messages[-1]["content"] == NEW_XRAY_NOTICE
+
+
+def test_a_third_x_ray_comes_back_with_a_new_session_id(app_client):
+    store = SessionStore()
+    fdi = yolo_output([(300, 300, 100, 200, TOOTH_ID_BY_FDI[26], 0.9)], 35)
+    lesion = yolo_output([(300, 300, 20, 20, 0, 0.6)], 4)
+
+    with app_client(
+        lesion_session=FakeOnnxSession(lesion),
+        fdi_session=FakeOnnxSession(fdi),
+        sessions=store,
+    ) as client:
+        first = client.post("/analyze", files=xray_upload()).json()
+        sid = first["session_id"]
+        client.post("/analyze", files=xray_upload(), data={"session_id": sid})
+        third = client.post("/analyze", files=xray_upload(), data={"session_id": sid}).json()
+
+    # The frontend adopts whatever id comes back, so the consultation rolls over cleanly.
+    assert third["session_id"] != sid
+    assert store.get(third["session_id"]).analysis_count == 1

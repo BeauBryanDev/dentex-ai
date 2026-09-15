@@ -1,12 +1,23 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+import logging
+
+from fastapi import ( APIRouter,
+                     File, 
+                     Form, 
+                     HTTPException,
+                     Request,
+                     UploadFile, 
+                     status )
 
 from app.core.config import settings
 from app.core.exception import ModelNotLoadedError
+from app.core.session_store import MAX_ANALYSES_PER_SESSION
 from app.schemas.analysis import AnalyzeResponse
 from app.services.analysis_service import analyze_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["analysis"])
 # POST /analyze — upload an X-ray, get the tooth chart and findings.
@@ -59,11 +70,19 @@ def analyze(
     # Put the findings against a session so POST /chat can pick them up. Passing an
     # existing session_id uploads a new X-ray into the running conversation.
     response = AnalyzeResponse.from_result(result, session_id="")
-    session = request.app.state.sessions.get_or_create(session_id)
     store = request.app.state.sessions
-    
-    store.set_analysis(session.session_id, 
-                       response.model_dump(exclude={"session_id"})
-                       )
+
+    session, started_new = store.attach_analysis(
+        session_id,
+        response.model_dump(exclude={"session_id"}),
+    )
+
+    if started_new and session_id:
+        logger.info(
+            "session %s is full (%s X-rays); started %s for this upload",
+            session_id,
+            MAX_ANALYSES_PER_SESSION,
+            session.session_id,
+        )
 
     return response.model_copy(update={"session_id": session.session_id})
