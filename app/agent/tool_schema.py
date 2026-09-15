@@ -3,15 +3,17 @@ from __future__ import annotations
 
 from typing import Any
 
+# The tool surface exposed to Claude.
 SEARCH_TOOL_NAME = "search_dental_reference"
 DENTAL_OFFICE_TOOL_NAME = "find_dental_offices_nearby"
-# The tool surface exposed to Claude.
+ORAL_HEALTH_STATS_TOOL_NAME = "get_country_oral_health_access"
+ADVICE_VIDEO_TOOL_NAME = "find_oral_health_advice_videos"
+
 
 # There is no [analyze_xray] tool and there must not be one. 
 # The vision analysis happens in POST /analyze | vision is not a tool Claude can call. 
-# The only tool Claude can call is search_dental_reference,
-# which is a retrieval over the reference corpus.
-# and the tool call happens in POST /chat.
+# The only tool Claude can call are these one below....
+# These are the tools exposed to Agent loop.
 
 SEARCH_DENTAL_REFERENCE: dict[str, Any] = {
     
@@ -78,7 +80,7 @@ FIND_DENTAL_OFFICES_NEARBY: dict[str, Any] = {
         "the user's town or city from their own message. If they have not said where "
         "they are, ask plainly: 'Which town or city are you in?' Do not call this tool "
         "until they answer. Never infer location from IP address, browser geolocation, "
-        "GPS, or assumptions.\n\n"
+        "GPS, or assumptions, this is invasive.\n\n"
         "Use it when someone wants to find a dentist, dental clinic, or dental office "
         "near them, or asks where they can book an appointment locally. If the city "
         "name is ambiguous (for example 'Springfield'), ask which country or region they "
@@ -113,4 +115,108 @@ FIND_DENTAL_OFFICES_NEARBY: dict[str, Any] = {
     },
 }
 
-TOOLS: list[dict[str, Any]] = [SEARCH_DENTAL_REFERENCE, FIND_DENTAL_OFFICES_NEARBY]
+GET_COUNTRY_ORAL_HEALTH_ACCESS: dict[str, Any] = {
+
+    "name": ORAL_HEALTH_STATS_TOOL_NAME,
+    "description": (
+        "Look up country-level oral health *system* indicators from the WHO Global "
+        "Health Observatory: whether the country has a national oral health plan, "
+        "whether screening, urgent and restorative care are available in the public "
+        "system, and the share of oral care covered by a government scheme.\n\n"
+        "Call it when the question is about access, cost, coverage, public policy or "
+        "what care a patient can expect to get in a particular country — 'is a filling "
+        "covered where I live?', 'can I get urgent dental care in Colombia?'. The "
+        "country must come from the user's own message; if they have not said which "
+        "country, ask plainly and wait, exactly as with the dental office search. "
+        "Never infer it from IP, GPS, or the language they write in.\n\n"
+        "This is health-system data, never clinical guidance and never patient data: it "
+        "cannot tell you how to treat a tooth. For clinical questions use "
+        f"`{SEARCH_TOOL_NAME}`; for a specific clinic use "
+        f"`{DENTAL_OFFICE_TOOL_NAME}`.\n\n"
+        "Each indicator carries the year it was reported — say the year when you quote "
+        "a figure, and say plainly when an indicator has no data rather than filling the "
+        "gap from memory. WHO reports on national systems, so it describes the public "
+        "system in general, not the user's own insurance. Answer in the user's language."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "country": {
+                "type": "string",
+                "description": (
+                    "The country the user named, as they stated it (for example "
+                    "'Colombia', 'France', 'Viet Nam'). English spelling resolves most "
+                    "reliably. Pass a country — not a city, region or ISO code; if the "
+                    "user gave only a city, use the country it is in, and ask when that "
+                    "is ambiguous. Required — never invent or infer this value."
+                ),
+            },
+        },
+        "required": ["country"],
+        "additionalProperties": False,
+    },
+}
+
+
+FIND_ORAL_HEALTH_ADVICE_VIDEOS: dict[str, Any] = {
+
+    "name": ADVICE_VIDEO_TOOL_NAME,
+    "description": (
+        "Find short oral health advice videos on YouTube, restricted to a small list of "
+        "vetted dentist-run channels — brushing and flossing technique, interdental "
+        "brushes, caring for a new crown or implant, what a procedure involves, settling "
+        "a child\'s or a nervous patient\'s fear of the chair.\n\n"
+        "**Call it only when the user asks for a video.** They must have asked — for a "
+        "video, a demonstration, \'show me\', \'something I can watch\'. A question about a "
+        "technique is not a request for a video: answer it in words. A diagnosis is "
+        "never a request for a video — after reading an X-ray, give the findings and the "
+        "plan and stop, and do not close with an offer of a link. If watching would "
+        "genuinely help, you may offer once in a single sentence and wait; call this "
+        "tool only once they have said yes.\n\n"
+        "It is an adjunct, never the answer. Give your own explanation first and offer "
+        "the video as something to watch afterwards. Do not call it to establish a "
+        "clinical fact, to justify a recommendation, or in place of "
+        f"`{SEARCH_TOOL_NAME}` — a video is not evidence, and the reference corpus is "
+        "what a recommendation is grounded in.\n\n"
+        "Only videos from the trusted channels are returned, so the result may be empty. "
+        "That is a real answer: say nothing suitable was found and carry on with your own "
+        "explanation. Never fill the gap with a YouTube link from memory — a link you "
+        "invent is very likely dead or to a channel nobody vetted. Only ever give links "
+        "this tool returned, as markdown links using the title and URL from its output."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "What the video should demonstrate, as a short phrase in the "
+                    "`language` you are passing ('correct flossing technique', "
+                    "'tecnica de cepillado para ninos'). Describe the technique or topic, "
+                    "not the patient — never put findings, tooth numbers or anything else "
+                    "from the X-ray into this query; it goes to YouTube."
+                ),
+            },
+            "language": {
+                "type": "string",
+                "enum": ["en", "es"],
+                "description": (
+                    "Language of the channels to search: 'en' or 'es'. Match the "
+                    "language the user is writing in. There is a trusted channel list per "
+                    "language and only these two exist — for a user writing in any other "
+                    "language, use 'en' and tell them the video is in English."
+                ),
+            },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+# These are the tools exposed to Agent loop.
+TOOLS: list[dict[str, Any]] = [
+    SEARCH_DENTAL_REFERENCE,
+    FIND_DENTAL_OFFICES_NEARBY,
+    GET_COUNTRY_ORAL_HEALTH_ACCESS,
+    FIND_ORAL_HEALTH_ADVICE_VIDEOS,
+]
