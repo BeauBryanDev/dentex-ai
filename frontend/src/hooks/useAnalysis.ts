@@ -48,6 +48,10 @@ export function useAnalysis() {
         const res = await analyzeImage(file, sessionId);
 
         const view = deriveAnalysis(res);
+        // A different id back means the backend rolled the consultation over — it caps one
+        // at two X-rays. Its message history starts empty, so the transcript on screen has
+        // to start empty too, or the dentist reads a conversation the agent cannot see.
+        const rolledOver = Boolean(sessionId) && res.session_id !== sessionId;
         setSessionId(res.session_id);
         setAnalysis(view);
 
@@ -59,12 +63,13 @@ export function useAnalysis() {
           id: "sys-" + Date.now(),
           role: "system",
           text:
+            (rolledOver ? "New consultation started. " : "") +
             `Analysis complete — ${counts.detected} teeth detected, ` +
             `${res.findings.length} finding${res.findings.length === 1 ? "" : "s"}. ` +
             `Ask me anything about them.`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         };
-        setChatMessages((prev) => [...prev, note]);
+        setChatMessages((prev) => (rolledOver ? [note] : [...prev, note]));
       } catch (err) {
         const msg =
           err instanceof ApiError
