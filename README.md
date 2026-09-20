@@ -19,6 +19,7 @@ several hyperparameter configurations have produced, so the remaining lever is a
 corpus, not further tuning. Sourcing one is the highest-value improvement available to this
 project.
 
+See project at [dentex.tensorgeek.com](https://dentex.tensorgeek.com) 
 ---
 
 ## How it works
