@@ -4,6 +4,9 @@ name: Deploy to VPS
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**.md' 
+      - 'README.md'
 
 jobs:
   deploy:

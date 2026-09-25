@@ -388,6 +388,11 @@ looking exactly as authoritative as before. Nothing failed; nothing logged.
 
 ---
 
+## Models
+
+The two models were exported at onnx format, so they run in cpu,  they are available at beaunix/dentex-ai  in Hugging Face.
+
+
 ## License
 
 See [LICENSE](LICENSE).
